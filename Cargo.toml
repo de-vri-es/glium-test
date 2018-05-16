@@ -1,0 +1,14 @@
+[package]
+name = "glium-test"
+version = "0.1.0"
+authors = ["Maarten de Vries <maarten@de-vri.es>"]
+
+[dependencies]
+alga         = "*"
+derive-error = "*"
+genmesh      = "*"
+glium        = "*"
+image        = "*"
+nalgebra     = "*"
+num          = "*"
+obj          = "*"
