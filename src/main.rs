@@ -16,12 +16,7 @@ pub mod shader;
 pub mod teapot;
 pub mod texture;
 
-use mesh::{
-	IndexBuffer,
-	NormalVertices,
-	PositionVertices,
-	TextureVertices,
-};
+use mesh::IndexBuffer;
 use geometry::{rotate, VectorEx};
 
 use nalgebra as na;
@@ -56,19 +51,21 @@ fn main() {
 	let program = shader::program_pnt(&display).unwrap();
 
 	let teapot   = teapot::object();
-	let vertices = (
-		&teapot.position_vertices(&display).unwrap(),
-		&teapot.normal_vertices(&display).unwrap(),
-		&teapot.texture_vertices(&display).unwrap(),
-	);
-	let polygon  = mesh_obj::group_to_polygon::<u16>(&teapot.objects[0].groups[0]).unwrap();
-	let indices  = polygon.to_index_buffer(&display).unwrap();
+	let vertices = glium::VertexBuffer::new(&display, &teapot.vertices).unwrap();
+	let polygon  = &teapot.polygons[0].faces;
+	let indices  = polygon.index_buffer(&display).unwrap();
+	println!("vertex count: {}", teapot.vertices.len());
+	println!("face count:   {}", polygon.len());
+
+	for triangle in polygon.iter() {
+		println!("f {} {} {}", triangle[0] + 1, triangle[1] + 1, triangle[2] + 1);
+	}
 
 	let mut closed = false;
 	let mut time: f32 = 0.0;
 
 	while !closed {
-		let transform = na::Similarity::from_parts(na::Translation::identity(), rotate(na::Vector3::new(1., 1., 1.).as_unit(), time), 0.01).to_homogeneous();
+		let transform = na::Similarity::from_parts(na::Translation::identity(), rotate(na::Vector3::new(1., 1., 1.).as_unit(), time), 1.).to_homogeneous();
 
 		let mut frame = display.draw();
 		let uniforms = uniform!{
@@ -77,7 +74,7 @@ fn main() {
 		};
 
 		frame.clear_color_and_depth((0.0, 0.0, 1.0, 1.0), 1.0);
-		frame.draw(vertices, &indices, &program, &uniforms, &params).unwrap();
+		frame.draw(&vertices, &indices, &program, &uniforms, &params).unwrap();
 		frame.finish().unwrap();
 
 		// listing the events produced by application and waiting to be received
