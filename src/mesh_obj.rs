@@ -1,26 +1,45 @@
 use mesh::{
-	ExtractVertex,
-	Polygon,
+	FacesWithMaterial,
+	Mesh,
 	Triangle,
+	TriangleList,
 	VertexPosition,
 	VertexPositionNormal,
 	VertexPositionNormalTexture,
-	GetPositions,
-	GetNormals,
-	GetTexturePositions,
 };
+
+use shader;
 
 use ::glium;
 use ::glium::index::Index;
 use ::obj;
 use ::num::NumCast;
 
-use ::std::borrow::Cow;
 use ::std::collections::BTreeMap;
 use ::std::collections::btree_map::Entry::{Occupied,Vacant};
 use ::std::io;
-use ::std::marker::PhantomData;
 use ::std::path::Path;
+
+pub trait GetPositions {
+	fn get_positions(&self) -> &[[f32; 3]];
+}
+
+pub trait GetNormals {
+	fn get_normals(&self) -> &[[f32; 3]];
+}
+
+pub trait GetTexturePositions {
+	fn get_texture_positions(&self) -> &[[f32; 2]];
+}
+
+/// Allow extracting vertices from a buffer by an index.
+/**
+ * The buffer an index may be arbitrarily complex types,
+ * like tuples of buffers and indices.
+ */
+pub trait ExtractVertex<Buffer, Index>: Sized {
+	fn extract(buffer: &Buffer, index: &Index) -> Result<Self, String>;
+}
 
 impl<'a, P: obj::GenPolygon> GetPositions for obj::Obj<'a, P> {
 	fn get_positions(&self) -> &[[f32; 3]] { &self.position }
@@ -87,16 +106,12 @@ impl<B> ExtractVertex<B, obj::IndexTuple> for VertexPositionNormalTexture where
 	}
 }
 
-pub struct ObjPolygon<'a, I: Index> {
-	pub faces: Polygon<I>,
-	pub material: Option<Cow<'a, obj::Material>>,
-	_phantom: PhantomData<&'a bool>,
-}
-
-pub struct ObjMesh<'a, V: glium::Vertex, I: Index> {
-	pub vertices: Vec<V>,
-	pub polygons: Vec<ObjPolygon<'a, I>>,
-	_phantom: PhantomData<&'a bool>,
+pub fn convert_material(obj_mat: &obj::Material) -> shader::Material {
+	shader::Material {
+		diffuse:  obj_mat.kd.unwrap_or([1.0, 1.0, 1.0]),
+		specular: obj_mat.ks.unwrap_or([0.0, 0.0, 0.0]),
+		opacity:  obj_mat.d.unwrap_or(1.0),
+	}
 }
 
 struct ObjectReindexer<'obj, 'mat, V, I> where
@@ -114,7 +129,7 @@ impl<'obj, 'mat, V, I> ObjectReindexer<'obj, 'mat, V, I> where
 	I: Index + NumCast,
 	'mat: 'obj,
 {
-	fn reindex(object: &'obj obj::Obj<'mat, obj::SimplePolygon>) -> Result<ObjMesh<'mat, V, I>, String> {
+	fn reindex(object: &'obj obj::Obj<'mat, obj::SimplePolygon>) -> Result<Mesh<V, I>, String> {
 		Self{
 			object,
 			vertices: Vec::with_capacity(object.position.len()),
@@ -147,21 +162,20 @@ impl<'obj, 'mat, V, I> ObjectReindexer<'obj, 'mat, V, I> where
 		Ok(())
 	}
 
-	fn process_group(&mut self, group: &obj::Group<'mat, obj::SimplePolygon>) -> Result<ObjPolygon<'mat, I>, String> {
+	fn process_group(&mut self, group: &obj::Group<'mat, obj::SimplePolygon>) -> Result<FacesWithMaterial<I>, String> {
 		let total_faces = group.polys.iter().map(|x| x.len() / 3).sum();
 		let mut faces: Vec<Triangle<I>> = Vec::with_capacity(total_faces);
 		for indices in &group.polys {
 			self.process_indices(&mut faces, indices)?
 		}
 
-		Ok(ObjPolygon{
-			faces: Polygon(faces),
-			material: group.material.clone(),
-			_phantom: Default::default(),
+		Ok(FacesWithMaterial{
+			faces: TriangleList(faces),
+			material: group.material.as_ref().map(|x| convert_material(x.as_ref())).unwrap_or(shader::Material::default()),
 		})
 	}
 
-	fn process(mut self) -> Result<ObjMesh<'mat, V, I>, String> {
+	fn process(mut self) -> Result<Mesh<V, I>, String> {
 		let total_polygons = self.object.objects.iter().map(|x| x.groups.iter().count()).sum();
 		let mut polygons = Vec::with_capacity(total_polygons);
 		for object in &self.object.objects {
@@ -170,22 +184,21 @@ impl<'obj, 'mat, V, I> ObjectReindexer<'obj, 'mat, V, I> where
 			}
 		}
 
-		Ok(ObjMesh{
+		Ok(Mesh{
 			vertices: self.vertices,
 			polygons,
-			_phantom: Default::default(),
 		})
 	}
 }
 
-pub fn load<'a, V, I>(buffer: &mut impl io::BufRead) -> io::Result<ObjMesh<'a, V, I>> where
+pub fn load<'a, V, I>(buffer: &mut impl io::BufRead) -> io::Result<Mesh<V, I>> where
 	V: glium::Vertex + ExtractVertex<obj::Obj<'a, obj::SimplePolygon>, obj::IndexTuple>,
 	I: Index + NumCast,
 {
 	ObjectReindexer::reindex(&obj::Obj::load_buf(buffer)?).map_err(|x| io::Error::new(io::ErrorKind::Other, x))
 }
 
-pub fn load_file<'a, V, I>(path: &'a impl AsRef<Path>, load_materials: bool) -> io::Result<ObjMesh<'a, V, I>> where
+pub fn load_file<'a, V, I>(path: &'a impl AsRef<Path>, load_materials: bool) -> io::Result<Mesh<V, I>> where
 	V: glium::Vertex + ExtractVertex<obj::Obj<'a, obj::SimplePolygon>, obj::IndexTuple>,
 	I: Index + NumCast,
 {

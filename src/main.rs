@@ -12,11 +12,12 @@ extern crate derive_error;
 pub mod geometry;
 pub mod mesh;
 pub mod mesh_obj;
+pub mod render;
 pub mod shader;
 pub mod teapot;
 pub mod texture;
 
-use mesh::IndexBuffer;
+use mesh::MakeIndexBuffer;
 use geometry::{rotate, VectorEx};
 
 use nalgebra as na;
@@ -48,12 +49,12 @@ fn main() {
 		.. Default::default()
 	};
 
-	let program = shader::program_pnt(&display).unwrap();
+	let program = shader::default_program(&display).unwrap();
 
 	let teapot   = teapot::object();
 	let vertices = glium::VertexBuffer::new(&display, &teapot.vertices).unwrap();
 	let polygon  = &teapot.polygons[0].faces;
-	let indices  = polygon.index_buffer(&display).unwrap();
+	let indices  = polygon.make_index_buffer(&display).unwrap();
 	println!("vertex count: {}", teapot.vertices.len());
 	println!("face count:   {}", polygon.len());
 
@@ -74,7 +75,7 @@ fn main() {
 		};
 
 		frame.clear_color_and_depth((0.0, 0.0, 1.0, 1.0), 1.0);
-		frame.draw(&vertices, &indices, &program, &uniforms, &params).unwrap();
+		frame.draw(&vertices, &indices, program.inner(), &uniforms, &params).unwrap();
 		frame.finish().unwrap();
 
 		// listing the events produced by application and waiting to be received
