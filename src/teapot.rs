@@ -1,9 +1,10 @@
 use std::io::Cursor;
-use mesh;
-use mesh_obj;
+use vertex::VertexPositionNormal;
+use mesh::Mesh;
+use wavefront;
 
-const TEAPOT_BYTES: &[u8] = include_bytes!("assets/teapot.obj");
+const TEAPOT_BYTES: &[u8] = include_bytes!("assets/monkey.obj");
 
-pub fn object() -> mesh::Mesh<mesh::VertexPositionNormal, u16> {
-	mesh_obj::load(&mut Cursor::new(&TEAPOT_BYTES)).unwrap()
+pub fn object() -> Mesh<VertexPositionNormal, u16> {
+	wavefront::load(&mut Cursor::new(&TEAPOT_BYTES)).unwrap()
 }

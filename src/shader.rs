@@ -4,6 +4,11 @@ use glium::uniforms::AsUniformValue;
 use nalgebra as na;
 use std::mem::transmute;
 
+use vertex::{
+	VertexPositionNormal,
+	VertexPositionNormalTexture,
+};
+
 #[derive(Clone, Copy, PartialEq, PartialOrd, Debug)]
 pub struct Material {
 	pub diffuse:  [f32; 3],
@@ -21,10 +26,11 @@ impl Default for Material {
 	}
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct Uniforms<'a> {
-	light_direction: &'a na::Unit<na::Vector3<f32>>,
-	transform:       &'a na::Matrix4<f32>,
-	material:        &'a Material,
+	pub light_direction: &'a na::Unit<na::Vector3<f32>>,
+	pub transform:       &'a na::Matrix4<f32>,
+	pub material:        &'a Material,
 }
 
 impl<'a> glium::uniforms::Uniforms for Uniforms<'a> {
@@ -109,6 +115,22 @@ impl DefaultProgram {
 	pub fn inner_mut(&mut self) -> &mut glium::Program { &mut self.0 }
 }
 
-pub fn default_program(display: &glium::Display) -> Result<DefaultProgram, glium::program::ProgramCreationError> {
+pub trait ShaderProgram<V: glium::Vertex, I: glium::index::Index, U: glium::uniforms::Uniforms> {
+	fn draw(&self, surface: &mut impl glium::Surface, params: &glium::DrawParameters, vertices: &glium::VertexBuffer<V>, indices: &glium::IndexBuffer<I>, uniforms: &U) -> Result<(), glium::DrawError>;
+}
+
+impl<'a, I: glium::index::Index> ShaderProgram<VertexPositionNormal, I, Uniforms<'a>> for DefaultProgram {
+	fn draw(&self, surface: &mut impl glium::Surface, params: &glium::DrawParameters, vertices: &glium::VertexBuffer<VertexPositionNormal>, indices: &glium::IndexBuffer<I>, uniforms: &Uniforms<'a>) -> Result<(), glium::DrawError> {
+		surface.draw(vertices, indices, self.inner(), uniforms, params)
+	}
+}
+
+impl<'a, I: glium::index::Index> ShaderProgram<VertexPositionNormalTexture, I, Uniforms<'a>> for DefaultProgram {
+	fn draw(&self, surface: &mut impl glium::Surface, params: &glium::DrawParameters, vertices: &glium::VertexBuffer<VertexPositionNormalTexture>, indices: &glium::IndexBuffer<I>, uniforms: &Uniforms<'a>) -> Result<(), glium::DrawError> {
+		surface.draw(vertices, indices, self.inner(), uniforms, params)
+	}
+}
+
+pub fn default_program(display: &impl glium::backend::Facade) -> Result<DefaultProgram, glium::program::ProgramCreationError> {
 	glium::Program::from_source(display, &VERTEX_SHADER, &FRAGMENT_SHADER, None).map(DefaultProgram)
 }

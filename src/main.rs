@@ -11,25 +11,15 @@ extern crate derive_error;
 
 pub mod geometry;
 pub mod mesh;
-pub mod mesh_obj;
-pub mod render;
+pub mod wavefront;
 pub mod shader;
 pub mod teapot;
 pub mod texture;
+pub mod vertex;
 
-use mesh::MakeIndexBuffer;
 use geometry::{rotate, VectorEx};
 
 use nalgebra as na;
-
-struct AsUniform<'a, T: 'a>(pub &'a T);
-
-impl<'a> glium::uniforms::AsUniformValue for AsUniform<'a, nalgebra::Matrix4<f32>> {
-	fn as_uniform_value(&self) -> glium::uniforms::UniformValue {
-		glium::uniforms::UniformValue::Mat4(unsafe { std::mem::transmute(*self.0) })
-	}
-}
-
 
 fn main() {
 	use glium::glutin;
@@ -50,17 +40,7 @@ fn main() {
 	};
 
 	let program = shader::default_program(&display).unwrap();
-
-	let teapot   = teapot::object();
-	let vertices = glium::VertexBuffer::new(&display, &teapot.vertices).unwrap();
-	let polygon  = &teapot.polygons[0].faces;
-	let indices  = polygon.make_index_buffer(&display).unwrap();
-	println!("vertex count: {}", teapot.vertices.len());
-	println!("face count:   {}", polygon.len());
-
-	for triangle in polygon.iter() {
-		println!("f {} {} {}", triangle[0] + 1, triangle[1] + 1, triangle[2] + 1);
-	}
+	let monkey = mesh::RenderableMesh::from_mesh(&display, &wavefront::load_file::<vertex::VertexPositionNormal, u16>("src/assets/monkey.obj".as_ref(), true).unwrap()).unwrap();
 
 	let mut closed = false;
 	let mut time: f32 = 0.0;
@@ -69,13 +49,14 @@ fn main() {
 		let transform = na::Similarity::from_parts(na::Translation::identity(), rotate(na::Vector3::new(1., 1., 1.).as_unit(), time), 1.).to_homogeneous();
 
 		let mut frame = display.draw();
-		let uniforms = uniform!{
-			transform: AsUniform(&transform),
-			light_direction: [-1.0, 0.4, 0.9f32],
+		let uniforms = shader::Uniforms{
+			transform: &transform,
+			light_direction: &na::Vector3::new(-1.0, 0.4, 0.9).as_unit(),
+			material: &Default::default(),
 		};
 
 		frame.clear_color_and_depth((0.0, 0.0, 1.0, 1.0), 1.0);
-		frame.draw(&vertices, &indices, program.inner(), &uniforms, &params).unwrap();
+		monkey.draw_all(&mut frame, &params, &program, &uniforms).unwrap();
 		frame.finish().unwrap();
 
 		// listing the events produced by application and waiting to be received
