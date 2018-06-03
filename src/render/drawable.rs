@@ -21,5 +21,45 @@ pub unsafe trait ShaderProgram<V: glium::Vertex, Uniforms: glium::uniforms::Unif
 
 /// Trait for things that can be drawn to a surface.
 pub trait Drawable<ExtraArgs> {
-	fn draw(&self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, args: ExtraArgs) -> DrawResult;
+	fn draw(self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, args: ExtraArgs) -> DrawResult;
 }
+
+impl<'a, P, V, I, U> Drawable<()> for (&'a P, &'a glium::VertexBuffer<V>, &'a glium::IndexBuffer<I>, &'a U)
+where
+	P: ShaderProgram<V, U>,
+	V: glium::Vertex,
+	I: glium::index::Index,
+	U: glium::uniforms::Uniforms,
+{
+	fn draw(self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, _extra: ()) -> DrawResult {
+		let (program, vertices, indices, uniforms) = self;
+		program.draw(surface, vertices, indices, uniforms, draw_params)
+	}
+}
+
+impl<'a, P, V, I, U> Drawable<&'a U> for (&'a P, &'a glium::VertexBuffer<V>, &'a glium::IndexBuffer<I>)
+where
+	P: ShaderProgram<V, U>,
+	V: glium::Vertex,
+	I: glium::index::Index,
+	U: glium::uniforms::Uniforms,
+{
+	fn draw(self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, uniforms: &'a U) -> DrawResult {
+		let (program, vertices, indices) = self;
+		program.draw(surface, vertices, indices, uniforms, draw_params)
+	}
+}
+
+//impl<ExtraArgs, T> Drawable<ExtraArgs> for T
+//where
+	//ExtraArgs: Copy,
+	//for <'a> &'a T: IntoIterator,
+	//for <'a> <&'a T as IntoIterator>::Item: Drawable<ExtraArgs>,
+//{
+	//fn draw(&self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, extra: ExtraArgs) -> DrawResult {
+		//for drawable in self.into_iter() {
+			//drawable.draw(surface, draw_params, extra)?;
+		//}
+		//Ok(())
+	//}
+//}

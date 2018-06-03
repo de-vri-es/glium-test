@@ -1,5 +1,3 @@
-use glium;
-
 mod drawable;
 mod mesh;
 

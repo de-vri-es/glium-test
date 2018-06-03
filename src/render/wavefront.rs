@@ -2,6 +2,7 @@ use std;
 use glium;
 use obj;
 use num::NumCast;
+use nalgebra as na;
 
 use std::io;
 use std::collections::{
@@ -56,13 +57,29 @@ fn get_checked<'a, T>(slice: &'a [T], index: usize, name: &str) -> Result<&'a T,
 	slice.get(index).ok_or_else(|| format!("{} index out of range, total count: {}, index: {}", name, slice.len(), index))
 }
 
+fn vec3<T: na::Real>(data: &[T; 3]) -> na::Vector3<T> {
+	na::Vector3::from(*data)
+}
+
+fn point3<T: na::Real>(data: &[T; 3]) -> na::Point3<T> {
+	na::Point3::from_coordinates(vec3(data))
+}
+
+fn vec2<T: na::Real>(data: &[T; 2]) -> na::Vector2<T> {
+	na::Vector2::from(*data)
+}
+
+fn point2<T: na::Real>(data: &[T; 2]) -> na::Point2<T> {
+	na::Point2::from_coordinates(vec2(data))
+}
+
 /// Allow extracting position vertices from an Obj.
 impl<B> ExtractVertex<B, obj::IndexTuple> for VertexPosition where
 	B: GetPositions
 {
 	fn extract(buffer: &B, index: &obj::IndexTuple) -> Result<VertexPosition, String> {
 		Ok(VertexPosition{
-			position: *get_checked(buffer.get_positions(), index.0, "position")?,
+			position: point3(get_checked(buffer.get_positions(), index.0, "position")?),
 		})
 	}
 }
@@ -79,8 +96,8 @@ impl<B> ExtractVertex<B, obj::IndexTuple> for VertexPositionNormal where
 		};
 
 		Ok(VertexPositionNormal{
-			position: *get_checked(buffer.get_positions(), position, "position")?,
-			normal:   *get_checked(buffer.get_normals(),   normal,   "normal")?,
+			position: point3(get_checked(buffer.get_positions(), position, "position")?),
+			normal:     vec3(get_checked(buffer.get_normals(),   normal,   "normal")?),
 		})
 	}
 }
@@ -98,15 +115,19 @@ impl<B> ExtractVertex<B, obj::IndexTuple> for VertexPositionNormalTexture where
 		};
 
 		Ok(VertexPositionNormalTexture{
-			position: *get_checked(buffer.get_positions(),         position, "position")?,
-			normal:   *get_checked(buffer.get_normals(),           normal,   "normal")?,
-			texture:  *get_checked(buffer.get_texture_positions(), texture,  "texture position")?
+			position: point3(get_checked(buffer.get_positions(),         position, "position")?),
+			normal:     vec3(get_checked(buffer.get_normals(),           normal,   "normal")?),
+			texture:  point2(get_checked(buffer.get_texture_positions(), texture,  "texture position")?),
 		})
 	}
 }
 
-impl<'a> From<&'a obj::Material> for simple_shader::Material {
-	fn from(obj_mat: &'a obj::Material) -> Self {
+pub trait FromWavefrontMaterial {
+	fn from_wavefront_mat(mat: &obj::Material) -> Self;
+}
+
+impl FromWavefrontMaterial for simple_shader::Material {
+	fn from_wavefront_mat(obj_mat: &obj::Material) -> Self {
 		Self{
 			diffuse:  obj_mat.kd.unwrap_or([1.0, 1.0, 1.0]),
 			specular: obj_mat.ks.unwrap_or([0.0, 0.0, 0.0]),
@@ -115,13 +136,9 @@ impl<'a> From<&'a obj::Material> for simple_shader::Material {
 	}
 }
 
-//pub fn convert_material(obj_mat: &obj::Material) -> Material {
-	//Material {
-		//diffuse:  obj_mat.kd.unwrap_or([1.0, 1.0, 1.0]),
-		//specular: obj_mat.ks.unwrap_or([0.0, 0.0, 0.0]),
-		//opacity:  obj_mat.d.unwrap_or(1.0),
-	//}
-//}
+impl FromWavefrontMaterial for () {
+	fn from_wavefront_mat(_: &obj::Material) -> Self { () }
+}
 
 struct ObjectReindexer<'obj, 'mat, V, I> where
 	V: glium::Vertex + ExtractVertex<obj::Obj<'mat, obj::SimplePolygon>, obj::IndexTuple>,
@@ -139,7 +156,7 @@ impl<'obj, 'mat, V, I> ObjectReindexer<'obj, 'mat, V, I> where
 	'mat: 'obj,
 {
 	fn reindex<M>(object: &'obj obj::Obj<'mat, obj::SimplePolygon>) -> Result<Mesh<V, I, M>, String> where 
-		M: for <'b> From<&'b obj::Material> + Clone + Default,
+		M: FromWavefrontMaterial + Clone + Default,
 	{
 		Self{
 			object,
@@ -174,7 +191,7 @@ impl<'obj, 'mat, V, I> ObjectReindexer<'obj, 'mat, V, I> where
 	}
 
 	fn process_group<M>(&mut self, group: &obj::Group<'mat, obj::SimplePolygon>) -> Result<(TriangleList<I>, M), String> where
-		M: for <'b> From<&'b obj::Material> + Clone + Default,
+		M: FromWavefrontMaterial + Clone + Default,
 	{
 		let total_faces = group.polys.iter().map(|x| x.len() / 3).sum();
 		let mut faces: Vec<Triangle<I>> = Vec::with_capacity(total_faces);
@@ -182,13 +199,13 @@ impl<'obj, 'mat, V, I> ObjectReindexer<'obj, 'mat, V, I> where
 			self.process_indices(&mut faces, indices)?
 		}
 
-		let material = group.material.as_ref().map(|x| x.as_ref().into()).unwrap_or_default();
+		let material = group.material.as_ref().map(|x| FromWavefrontMaterial::from_wavefront_mat(x.as_ref())).unwrap_or_default();
 
 		Ok((TriangleList(faces), material))
 	}
 
 	fn process<M>(mut self) -> Result<Mesh<V, I, M>, String> where
-		M: for <'b> From<&'b obj::Material> + Clone + Default,
+		M: FromWavefrontMaterial + Clone + Default,
 	{
 		let total_polygons = self.object.objects.iter().map(|x| x.groups.iter().count()).sum();
 		let mut polygons = Vec::with_capacity(total_polygons);
@@ -205,10 +222,9 @@ impl<'obj, 'mat, V, I> ObjectReindexer<'obj, 'mat, V, I> where
 	}
 }
 
-pub fn load<'a, V, I, M>(buffer: &mut impl io::BufRead) -> io::Result<Mesh<V, I, M>> where
+pub fn load<'a, V, I>(buffer: &mut impl io::BufRead) -> io::Result<Mesh<V, I, ()>> where
 	V: glium::Vertex + ExtractVertex<obj::Obj<'a, obj::SimplePolygon>, obj::IndexTuple>,
 	I: glium::index::Index + NumCast,
-	M: for <'b> From<&'b obj::Material> + Clone + Default,
 {
 	ObjectReindexer::reindex(&obj::Obj::load_buf(buffer)?).map_err(|x| io::Error::new(io::ErrorKind::Other, x))
 }
@@ -216,7 +232,7 @@ pub fn load<'a, V, I, M>(buffer: &mut impl io::BufRead) -> io::Result<Mesh<V, I,
 pub fn load_file<'a, V, I, M>(path: &'a (impl AsRef<std::path::Path> + ?Sized), load_materials: bool) -> io::Result<Mesh<V, I, M>> where
 	V: glium::Vertex + ExtractVertex<obj::Obj<'a, obj::SimplePolygon>, obj::IndexTuple>,
 	I: glium::index::Index + NumCast,
-	M: for <'b> From<&'b obj::Material> + Clone + Default,
+	M: FromWavefrontMaterial + Clone + Default,
 {
 	let mut object = obj::Obj::load(path.as_ref())?;
 	if load_materials {
