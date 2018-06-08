@@ -5,10 +5,12 @@ use nalgebra as na;
 use std::mem::transmute;
 
 use super::{
-	DrawResult,
-	Drawable,
+	Adjust,
+	LeftTransformGeometry,
+	RightTransformGeometry,
+	SetMaterial,
+	SetTime,
 	ShaderProgram,
-	TransformedObject,
 	VertexPositionNormal,
 	VertexPositionNormalTexture,
 };
@@ -31,11 +33,29 @@ impl Default for Material {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub struct Uniforms<'a> {
-	pub light_direction: &'a na::Unit<na::Vector3<f32>>,
-	pub transform:       &'a na::Transform3<f32>,
-	pub material:        &'a Material,
+pub struct Uniforms {
+	pub time:            f32,
+	pub light_direction: na::Unit<na::Vector3<f32>>,
+	pub transform:       na::Transform3<f32>,
+	pub material:        Material,
 }
+
+
+impl_adjust!(SetTime, Uniforms, Uniforms, self, u, {
+	Uniforms{time: self.0, ..*u}
+});
+
+impl_adjust!(LeftTransformGeometry, Uniforms, Uniforms, self, u, {
+	Uniforms{transform: self.0 * &u.transform, ..*u}
+});
+
+impl_adjust!(RightTransformGeometry, Uniforms, Uniforms, self, u, {
+	Uniforms{transform: &u.transform * &self.0, ..*u}
+});
+
+impl_adjust!(SetMaterial<Material>, Uniforms, Uniforms, self, u, {
+	Uniforms{material: self.0, ..*u}
+});
 
 trait AsUniform<'a> {
 	fn as_uniform_value(self) -> glium::uniforms::UniformValue<'a>;
@@ -65,10 +85,11 @@ impl<'a> AsUniform<'a> for &'a na::Unit<na::Vector3<f32>> {
 	}
 }
 
-impl<'a> glium::uniforms::Uniforms for Uniforms<'a> {
+impl<'a> glium::uniforms::Uniforms for Uniforms {
 	fn visit_values<'b, F>(&'b self, mut visit: F) where
 		F: FnMut(&str, glium::uniforms::UniformValue<'b>)
 	{
+		visit("time",            self.time.as_uniform_value());
 		visit("light_direction", self.light_direction.as_uniform_value());
 		visit("transform",       self.transform.as_uniform_value());
 		visit("mat_diffuse",     self.material.diffuse.as_uniform_value());
@@ -135,60 +156,10 @@ impl AsRef<glium::Program> for SimpleShaderProgram {
 	fn as_ref(&self) -> &glium::Program { self.inner() }
 }
 
-unsafe impl<'a> ShaderProgram<VertexPositionNormal, Uniforms<'a>> for SimpleShaderProgram {
+unsafe impl<'a> ShaderProgram<VertexPositionNormal, Uniforms> for SimpleShaderProgram {
 	fn program(&self) -> &glium::Program { self.inner() }
 }
 
-unsafe impl<'a> ShaderProgram<VertexPositionNormalTexture, Uniforms<'a>> for SimpleShaderProgram {
+unsafe impl<'a> ShaderProgram<VertexPositionNormalTexture, Uniforms> for SimpleShaderProgram {
 	fn program(&self) -> &glium::Program { self.inner() }
-}
-
-impl<'a, 'b, P, V, I> Drawable<(&'a P, &'a Uniforms<'a>)> for (&'b glium::VertexBuffer<V>, &'b glium::IndexBuffer<I>, &'b Material) where
-	for<'c> P: ShaderProgram<V, Uniforms<'c>>,
-	V: glium::Vertex,
-	I: glium::index::Index,
-{
-	fn draw(self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, extra: (&'a P, &'a Uniforms<'a>)) -> DrawResult {
-		let (program, uniforms) = extra;
-		let (vertices, indices, material) = self;
-		let uniforms = Uniforms{material: material, ..*uniforms};
-		program.draw(surface, vertices, indices, &uniforms, draw_params)
-	}
-}
-
-impl<'a, 'b, P, V, I> Drawable<&'a Uniforms<'a>> for (&'b P, &'b glium::VertexBuffer<V>, &'b glium::IndexBuffer<I>, &'b Material) where
-	for<'c> P: ShaderProgram<V, Uniforms<'c>>,
-	V: glium::Vertex,
-	I: glium::index::Index,
-{
-	fn draw(self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, uniforms: &'a Uniforms<'a>) -> DrawResult {
-		let (program, vertices, indices, material) = self;
-		let uniforms = Uniforms{material: material, ..*uniforms};
-		program.draw(surface, vertices, indices, &uniforms, draw_params)
-	}
-}
-
-impl<'a, 'b, Program, O> Drawable<(&'a Program, &'a Uniforms<'a>)> for &'b TransformedObject<O>
-where
-	O: Copy,
-	for<'c> O: Drawable<(&'c Program, &'c Uniforms<'c>)>
-{
-	fn draw(self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, extra: (&'a Program, &'a Uniforms<'a>)) -> DrawResult {
-		let (program, uniforms) = extra;
-		let transform = uniforms.transform * self.transform;;
-		let uniforms  = Uniforms{transform: &transform, ..*uniforms};
-		self.object.draw(surface, draw_params, (program, &uniforms))
-	}
-}
-
-impl<'a, 'b, O> Drawable<&'a Uniforms<'a>> for &'b TransformedObject<O>
-where
-	O: Copy,
-	for<'c> O: Drawable<&'c Uniforms<'c>>
-{
-	fn draw(self, surface: &mut impl glium::Surface, draw_params: &glium::DrawParameters, uniforms: &'a Uniforms<'a>) -> DrawResult {
-		let transform = uniforms.transform * self.transform;;
-		let uniforms  = Uniforms{transform: &transform, ..*uniforms};
-		self.object.draw(surface, draw_params, &uniforms)
-	}
 }

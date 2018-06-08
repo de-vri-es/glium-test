@@ -111,38 +111,11 @@ pub struct Mesh<V: glium::Vertex, I: glium::index::Index, P: Clone> {
 	pub polygons: Vec<(TriangleList<I>, P)>,
 }
 
-/// A simple mesh that with one vertex buffers and a vector of index buffers with customizable properties.
-#[derive(Debug)]
-pub struct RenderableMesh<V: glium::Vertex, I: glium::index::Index, P: Clone> {
-	pub vertices: glium::VertexBuffer<V>,
-	pub polygons: Vec<(glium::IndexBuffer<I>, P)>,
-}
-
-#[derive(Clone, Copy, Debug, Error)]
-pub enum MeshCreationError {
-	Vertex(glium::vertex::BufferCreationError),
-	Index(glium::index::BufferCreationError),
-}
-
 impl<V, I, P> Mesh<V, I, P> where
 	V: glium::Vertex,
 	I: glium::index::Index + NumCast + std::ops::Add<Output=I>,
 	P: Clone,
 {
-	/// Upload the mesh to the GPU.
-	pub fn upload(&self, facade: &impl glium::backend::Facade) -> Result<RenderableMesh<V, I, P>, MeshCreationError> {
-		let vertices = glium::VertexBuffer::new(facade, &self.vertices).map_err(MeshCreationError::Vertex)?;
-
-		let mut polygons = Vec::with_capacity(self.polygons.len());
-
-		for (indices, material) in &self.polygons {
-			let indices = indices.make_index_buffer(facade).map_err(MeshCreationError::Index)?;
-			polygons.push((indices, material.clone()))
-		}
-
-		Ok(RenderableMesh{vertices, polygons})
-	}
-
 	/// Append a single polygon with it's own vertices to the mesh.
 	pub fn append_consume_polygon(&mut self, vertices: &Vec<V>, mut polygon: TriangleList<I>, properties: P) {
 		let extra = I::from(self.vertices.len()).unwrap();
@@ -178,16 +151,4 @@ impl<V, I, P> Mesh<V, I, P> where
 		self.vertices.append(&mut other.vertices);
 		self.polygons.append(&mut other.polygons);
 	}
-}
-
-/// An object with a transformation applied.
-#[derive(Copy, Clone, Debug)]
-pub struct TransformedObject<Object> {
-	pub object    : Object,
-	pub transform : na::Transform3<f32>,
-}
-
-impl<O> TransformedObject<O> {
-	/// Create a transformed object from an object and a transformation.
-	pub fn new(object: O, transform: na::Transform3<f32>) -> Self { Self{object, transform} }
 }
