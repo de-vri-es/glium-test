@@ -36,6 +36,7 @@ impl Default for Material {
 pub struct Uniforms {
 	pub time:            f32,
 	pub light_direction: na::Unit<na::Vector3<f32>>,
+	pub perspective:     na::Transform3<f32>,
 	pub transform:       na::Transform3<f32>,
 	pub material:        Material,
 }
@@ -91,6 +92,7 @@ impl<'a> glium::uniforms::Uniforms for Uniforms {
 	{
 		visit("time",            self.time.as_uniform_value());
 		visit("light_direction", self.light_direction.as_uniform_value());
+		visit("perspective",     self.perspective.as_uniform_value());
 		visit("transform",       self.transform.as_uniform_value());
 		visit("mat_diffuse",     self.material.diffuse.as_uniform_value());
 		visit("mat_specular",    self.material.specular.as_uniform_value());
@@ -100,28 +102,29 @@ impl<'a> glium::uniforms::Uniforms for Uniforms {
 
 pub const VERTEX_SHADER: &str = r#"
 	#version 150
+	uniform mat4 perspective;
 	uniform mat4 transform;
 
 	in vec3 position;
 	in vec3 normal;
 	in vec2 texture;
 
-	out vec3 i_normal;
 	out vec3 v_normal;
 	out vec2 v_texture;
+	out vec3 v_position;
 
 	void main() {
-		i_normal = normal;
 		v_normal = transpose(inverse(mat3(transform))) * normal;
 		v_texture = texture;
-		gl_Position = transform * vec4(position, 1.0);
+		gl_Position = perspective * transform * vec4(position, 1.0);
+		v_position  = gl_Position.xyz / gl_Position.w;
 	}
 "#;
 
 pub const FRAGMENT_SHADER: &str = r#"
 	#version 140
-	in vec3 i_normal;
 	in vec3 v_normal;
+	in vec3 v_position;
 	out vec4 color;
 
 	uniform vec3 light_direction;
@@ -130,13 +133,17 @@ pub const FRAGMENT_SHADER: &str = r#"
 	uniform float mat_opacity;
 
 	float dot_normal(vec3 a, vec3 b) {
-		return dot(a, b) / length(a) / length(b);
+		return dot(normalize(a), normalize(b)); // length(a) / length(b);
 	}
 
 	void main() {
-		float brightness = dot_normal(v_normal, light_direction);
-		vec3 diffuse = mat_diffuse * (brightness * 0.25 + 0.5);
-		color = vec4(diffuse, mat_opacity);
+		vec3 optimal_reflection = reflect(light_direction, v_normal);
+		float specular      = pow(max(0.0, dot(optimal_reflection, normalize(-v_position))), 16.0);
+		//vec3 half_direction = normalize(normalize(light_direction) + normalize(-v_position));
+		//float specular      = pow(max(0.0, dot(half_direction, normalize(v_normal))), 24.0);
+		float diffuse       = 0.1 + max(0, dot(normalize(v_normal), normalize(light_direction)));
+
+		color = vec4(mat_diffuse * diffuse + mat_specular * specular, 1);
 	}
 "#;
 
