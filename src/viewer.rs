@@ -77,17 +77,17 @@ impl Viewer {
 			glutin::WindowEvent::Focused(focused) => {
 				self.mouse_down_ = self.mouse_down_ && *focused;
 			},
-			glutin::WindowEvent::CursorMoved{position, ..} => {
+			glutin::WindowEvent::CursorMoved{position, modifiers, ..} => {
 				let new_position = na::Vector2::new(position.x, position.y);
 				let difference   = new_position - self.mouse_position_;
 				if self.mouse_down_ {
-					self.camera_orbit_ += difference;
+					self.camera_orbit_ += difference * Self::modifier_scale(modifiers);
 					self.update_camera();
 				}
 				self.mouse_position_ = new_position;
 			},
-			glutin::WindowEvent::MouseWheel{delta, ..} => {
-				self.camera_zoom_ += delta.pixel_delta().y;
+			glutin::WindowEvent::MouseWheel{delta, modifiers, ..} => {
+				self.camera_zoom_ += delta.pixel_delta().y * Self::modifier_scale(modifiers);
 				self.update_camera();
 			},
 			glutin::WindowEvent::MouseInput{button, state, ..} => {
@@ -96,6 +96,15 @@ impl Viewer {
 				}
 			},
 			_ => (),
+		}
+	}
+
+	fn modifier_scale(modifiers: &glutin::ModifiersState) -> f64 {
+		match (modifiers.shift, modifiers.ctrl) {
+			(false, false) =>  1.0,
+			( true,  true) =>  1.0,
+			( true, false) => 10.0,
+			(false,  true) =>  0.1,
 		}
 	}
 
