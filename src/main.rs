@@ -1,5 +1,6 @@
 extern crate alga;
 extern crate genmesh;
+#[macro_use]
 extern crate glium;
 extern crate glutin;
 extern crate image;
@@ -84,8 +85,9 @@ fn main() {
 		1024.0,
 	);
 
+	let mut fxaa = render::Fxaa::new(&display);
+
 	while !viewer.close_requested() {
-		let mut frame = display.draw();
 		let uniforms = Uniforms{
 			time: 0.0,
 			perspective: na::convert(*viewer.perspective()),
@@ -94,9 +96,11 @@ fn main() {
 			material: Default::default(),
 		};
 
-		frame.clear_color_and_depth((0.0, 0.0, 1.0, 1.0), 1.0);
-
-		drone.draw(&mut frame, &program, &uniforms, &params).unwrap();
+		let mut frame = display.draw();
+		fxaa.draw(&mut frame, |frame| {
+			frame.clear_color_and_depth((0.0, 0.0, 1.0, 1.0), 1.0);
+			drone.draw(frame, &program, &uniforms, &params)
+		}).unwrap();
 		frame.finish().unwrap();
 
 		event_loop.poll_events(|event| {
